@@ -45,38 +45,58 @@ A file or directory can have multiple dynamic parts, like `[id]-[category].svelt
 
 ### Endpoints
 
-Endpoints are modules written in `.js` (or `.ts`) files that export functions corresponding to HTTP methods. For example, our hypothetical blog page, `/blog/cool-article`, might request data from `/blog/cool-article.json`, which could be represented by a `src/routes/blog/[slug].json.js` endpoint:
+Endpoints are modules written in `.js` (or `.ts`) files that export functions corresponding to HTTP methods.
 
 ```ts
-type Headers = Record<string, string>;
-type DefaultBody = JSONValue | Uint8Array;
+// Declaration types for Endpoints
+// * declarations that are not exported are for internal use
 
-type Request<Locals = Record<string, any>, Body = unknown> = {
+// type of string[] is only for set-cookie
+// everything else must be a type of string
+type ResponseHeaders = Record<string, string | string[]>;
+type RequestHeaders = Record<string, string>;
+
+export type RawBody = null | Uint8Array;
+export interface IncomingRequest {
 	method: string;
 	host: string;
-	headers: Headers;
 	path: string;
-	params: Record<string, string>;
 	query: URLSearchParams;
-	rawBody: string | Uint8Array;
+	headers: RequestHeaders;
+	rawBody: RawBody;
+}
+
+type ParameterizedBody<Body = unknown> = Body extends FormData
+	? ReadOnlyFormData
+	: (string | RawBody | ReadOnlyFormData) & Body;
+// ServerRequest is exported as Request
+export interface ServerRequest<Locals = Record<string, any>, Body = unknown>
+	extends IncomingRequest {
+	params: Record<string, string>;
 	body: ParameterizedBody<Body>;
 	locals: Locals; // populated by hooks handle
-};
+}
 
-type EndpointOutput<Body extends DefaultBody = DefaultBody> = {
+type DefaultBody = JSONResponse | Uint8Array;
+export interface EndpointOutput<Body extends DefaultBody = DefaultBody> {
 	status?: number;
-	headers?: Headers;
+	headers?: ResponseHeaders;
 	body?: Body;
-};
+}
 
-type RequestHandler<
+export interface RequestHandler<
 	Locals = Record<string, any>,
 	Input = unknown,
 	Output extends DefaultBody = DefaultBody
-> = (
-	request: Request<Locals, Input>
-) => void | EndpointOutput<Output> | Promise<void | EndpointOutput<Output>>;
+> {
+	(request: ServerRequest<Locals, Input>):
+		| void
+		| EndpointOutput<Output>
+		| Promise<void | EndpointOutput<Output>>;
+}
 ```
+
+ For example, our hypothetical blog page, `/blog/cool-article`, might request data from `/blog/cool-article.json`, which could be represented by a `src/routes/blog/[slug].json.js` endpoint:
 
 ```js
 import db from '$lib/database';
@@ -125,8 +145,6 @@ export function post(request) {...}
 Since `delete` is a reserved word in JavaScript, DELETE requests are handled with a `del` function.
 
 > We don't interact with the `req`/`res` objects you might be familiar with from Node's `http` module or frameworks like Express, because they're only available on certain platforms. Instead, SvelteKit translates the returned object into whatever's required by the platform you're deploying your app to.
->
-> The `body` property of the request object exists in the case of POST requests. If you're posting form data, it will be a read-only version of the [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData) object.
 
 To set multiple cookies in a single set of response headers, you can return an array:
 
@@ -137,6 +155,15 @@ return {
 	}
 };
 ```
+
+#### Body parsing
+
+The `body` property of the request object will be provided in the case of POST requests:
+
+- Text data (with content-type `text/plain`) will be parsed to a `string`
+- JSON data (with content-type `application/json`) will be parsed to a `JSONValue` (an `object`, `Array`, or primitive).
+- Form data (with content-type `application/x-www-form-urlencoded` or `multipart/form-data`) will be parsed to a read-only version of the [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData) object.
+- All other data will be provided as a `Uint8Array`
 
 ### Private modules
 

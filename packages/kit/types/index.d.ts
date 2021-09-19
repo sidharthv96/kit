@@ -3,14 +3,15 @@
 
 import './ambient-modules';
 
-export { Adapter, AdapterUtils, Config, ValidatedConfig } from './config';
+export { App, IncomingRequest, RawBody } from './app';
+export { Adapter, AdapterUtils, Config, PrerenderErrorHandler, ValidatedConfig } from './config';
 export { EndpointOutput, RequestHandler } from './endpoint';
-export { ErrorLoad, Load, Page, LoadInput, LoadOutput, ErrorLoadInput } from './page';
+export { ErrorLoad, ErrorLoadInput, Load, LoadInput, LoadOutput, Page } from './page';
 export {
-	Incoming,
+	ExternalFetch,
 	GetSession,
 	Handle,
+	HandleError,
 	ServerRequest as Request,
-	ServerResponse as Response,
-	ServerFetch
+	ServerResponse as Response
 } from './hooks';

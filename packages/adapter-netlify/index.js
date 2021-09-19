@@ -1,36 +1,50 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 import toml from '@iarna/toml';
 
-export default function () {
-	/** @type {import('@sveltejs/kit').Adapter} */
-	const adapter = {
+/**
+ * @typedef {import('esbuild').BuildOptions} BuildOptions
+ */
+
+/** @type {import('.')} */
+export default function (options) {
+	return {
 		name: '@sveltejs/adapter-netlify',
 
 		async adapt({ utils }) {
-			const { publish, functions } = validate_config().build;
+			// "build" is the default publish directory when Netlify detects SvelteKit
+			const publish = get_publish_directory(utils) || 'build';
+
+			utils.log.minor(`Publishing to "${publish}"`);
 
 			utils.rimraf(publish);
-			utils.rimraf(functions);
 
 			const files = fileURLToPath(new URL('./files', import.meta.url));
 
 			utils.log.minor('Generating serverless function...');
 			utils.copy(join(files, 'entry.js'), '.svelte-kit/netlify/entry.js');
 
-			await esbuild.build({
+			/** @type {BuildOptions} */
+			const default_options = {
 				entryPoints: ['.svelte-kit/netlify/entry.js'],
-				outfile: join(functions, 'render/index.js'),
+				// Any functions in ".netlify/functions-internal" are bundled in addition to user-defined Netlify functions.
+				// See https://github.com/netlify/build/pull/3213 for more details
+				outfile: '.netlify/functions-internal/__render.js',
 				bundle: true,
 				inject: [join(files, 'shims.js')],
 				platform: 'node'
-			});
+			};
 
-			writeFileSync(join(functions, 'package.json'), JSON.stringify({ type: 'commonjs' }));
+			const build_options =
+				options && options.esbuild ? await options.esbuild(default_options) : default_options;
 
-			utils.log.info('Prerendering static pages...');
+			await esbuild.build(build_options);
+
+			writeFileSync(join('.netlify', 'package.json'), JSON.stringify({ type: 'commonjs' }));
+
+			utils.log.minor('Prerendering static pages...');
 			await utils.prerender({
 				dest: publish
 			});
@@ -40,16 +54,19 @@ export default function () {
 			utils.copy_client_files(publish);
 
 			utils.log.minor('Writing redirects...');
-			utils.copy('_redirects', `${publish}/_redirects`);
-			appendFileSync(`${publish}/_redirects`, '\n\n/* /.netlify/functions/render 200');
+
+			const redirectPath = join(publish, '_redirects');
+			utils.copy('_redirects', redirectPath);
+			appendFileSync(redirectPath, '\n\n/* /.netlify/functions/__render 200');
 		}
 	};
-
-	return adapter;
 }
-
-function validate_config() {
+/**
+ * @param {import('@sveltejs/kit').AdapterUtils} utils
+ **/
+function get_publish_directory(utils) {
 	if (existsSync('netlify.toml')) {
+		/** @type {{ build?: { publish?: string }} & toml.JsonMap } */
 		let netlify_config;
 
 		try {
@@ -59,10 +76,9 @@ function validate_config() {
 			throw err;
 		}
 
-		if (!netlify_config.build || !netlify_config.build.publish || !netlify_config.build.functions) {
-			throw new Error(
-				'You must specify build.publish and build.functions in netlify.toml. Consult https://github.com/sveltejs/kit/tree/master/packages/adapter-netlify#configuration'
-			);
+		if (!netlify_config.build || !netlify_config.build.publish) {
+			utils.log.warn('No publish directory specified in netlify.toml, using default');
+			return;
 		}
 
 		if (netlify_config.redirects) {
@@ -70,12 +86,15 @@ function validate_config() {
 				"Redirects are not supported in netlify.toml. Use _redirects instead. For more details consult the readme's troubleshooting section."
 			);
 		}
-
-		return netlify_config;
+		if (resolve(netlify_config.build.publish) === process.cwd()) {
+			throw new Error(
+				'The publish directory cannot be set to the site root. Please change it to another value such as "build" in netlify.toml.'
+			);
+		}
+		return netlify_config.build.publish;
 	}
 
-	// TODO offer to create one?
-	throw new Error(
-		'Missing a netlify.toml file. Consult https://github.com/sveltejs/kit/tree/master/packages/adapter-netlify#configuration'
+	utils.log.warn(
+		'No netlify.toml found. Using default publish directory. Consult https://github.com/sveltejs/kit/tree/master/packages/adapter-netlify#configuration for more details '
 	);
 }

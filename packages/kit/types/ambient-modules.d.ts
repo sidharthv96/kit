@@ -1,3 +1,5 @@
+/* eslint-disable import/no-duplicates */
+
 declare module '$app/env' {
 	/**
 	 * Whether or not app is in AMP mode.
@@ -69,18 +71,18 @@ declare module '$app/navigation' {
 
 declare module '$app/paths' {
 	/**
-	 * A root-relative (i.e. begins with a `/`) string that matches `config.kit.files.base` in your project configuration.
+	 * A root-relative (i.e. begins with a `/`) string that matches `config.kit.paths.base` in your project configuration.
 	 */
 	export const base: string;
 	/**
-	 * A root-relative or absolute path that matches `config.kit.files.assets` (after it has been resolved against base).
+	 * A root-relative or absolute path that matches `config.kit.paths.assets` (after it has been resolved against base).
 	 */
 	export const assets: string;
 }
 
 declare module '$app/stores' {
 	import { Readable, Writable } from 'svelte/store';
-	type Page = import('@sveltejs/kit').Page;
+	import { Page } from '@sveltejs/kit';
 	type Navigating = { from: Page; to: Page };
 
 	/**
@@ -128,4 +130,44 @@ declare module '$service-worker' {
 	 * This is only available to service workers.
 	 */
 	export const timestamp: number;
+}
+
+declare module '@sveltejs/kit/hooks' {
+	import { Handle } from '@sveltejs/kit';
+
+	/**
+	 * Utility function that allows chaining `handle` functions in a
+	 * middleware-like manner.
+	 *
+	 * @param handlers The chain of `handle` functions
+	 */
+	export function sequence(...handlers: Handle[]): Handle;
+}
+
+declare module '@sveltejs/kit/node' {
+	import { IncomingMessage } from 'http';
+	import { RawBody } from '@sveltejs/kit';
+
+	export interface GetRawBody {
+		(request: IncomingMessage): Promise<RawBody>;
+	}
+	export const getRawBody: GetRawBody;
+}
+
+declare module '@sveltejs/kit/ssr' {
+	import { IncomingRequest, Response } from '@sveltejs/kit';
+	// TODO import from public types, right now its heavily coupled with internal
+	type Options = import('@sveltejs/kit/types/internal').SSRRenderOptions;
+	type State = import('@sveltejs/kit/types/internal').SSRRenderState;
+
+	export interface Respond {
+		(incoming: IncomingRequest, options: Options, state?: State): Response;
+	}
+	export const respond: Respond;
+}
+
+declare module '@sveltejs/kit/install-fetch' {
+	import fetch, { Headers, Request, Response } from 'node-fetch';
+
+	export { fetch, Headers, Request, Response };
 }

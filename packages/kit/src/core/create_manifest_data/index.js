@@ -4,13 +4,15 @@ import mime from 'mime';
 import { posixify } from '../utils.js';
 import glob from 'tiny-glob/sync.js';
 
-/** @typedef {{
+/**
+ * A portion of a file or directory name where the name has been split into
+ * static and dynamic parts
+ * @typedef {{
  *   content: string;
  *   dynamic: boolean;
  *   spread: boolean;
- * }} Part */
-
-/** @typedef {{
+ * }} Part
+ * @typedef {{
  *   basename: string;
  *   ext: string;
  *   parts: Part[],
@@ -19,7 +21,8 @@ import glob from 'tiny-glob/sync.js';
  *   is_index: boolean;
  *   is_page: boolean;
  *   route_suffix: string
- * }} Item */
+ * }} Item
+ */
 
 const specials = new Set(['__layout', '__layout.reset', '__error']);
 
@@ -92,77 +95,74 @@ export default function create_manifest_data({ config, output, cwd = process.cwd
 	 * @param {string} dir
 	 * @param {Part[][]} parent_segments
 	 * @param {string[]} parent_params
-	 * @param {string[]} layout_stack // accumulated __layout.svelte components
-	 * @param {string[]} error_stack // accumulated __error.svelte components
+	 * @param {Array<string|undefined>} layout_stack // accumulated __layout.svelte components
+	 * @param {Array<string|undefined>} error_stack // accumulated __error.svelte components
 	 */
 	function walk(dir, parent_segments, parent_params, layout_stack, error_stack) {
 		/** @type {Item[]} */
-		const items = fs
-			.readdirSync(dir)
-			.map((basename) => {
-				const resolved = path.join(dir, basename);
-				const file = posixify(path.relative(cwd, resolved));
-				const is_dir = fs.statSync(resolved).isDirectory();
+		let items = [];
+		fs.readdirSync(dir).forEach((basename) => {
+			const resolved = path.join(dir, basename);
+			const file = posixify(path.relative(cwd, resolved));
+			const is_dir = fs.statSync(resolved).isDirectory();
 
-				const ext =
-					config.extensions.find((ext) => basename.endsWith(ext)) || path.extname(basename);
+			const ext = config.extensions.find((ext) => basename.endsWith(ext)) || path.extname(basename);
 
-				const name = ext ? basename.slice(0, -ext.length) : basename;
+			const name = ext ? basename.slice(0, -ext.length) : basename;
 
-				// TODO remove this after a while
-				['layout', 'layout.reset', 'error'].forEach((reserved) => {
-					if (name === `$${reserved}`) {
-						const prefix = posixify(path.relative(cwd, dir));
-						const bad = `${prefix}/$${reserved}${ext}`;
-						const good = `${prefix}/__${reserved}${ext}`;
+			// TODO remove this after a while
+			['layout', 'layout.reset', 'error'].forEach((reserved) => {
+				if (name === `$${reserved}`) {
+					const prefix = posixify(path.relative(cwd, dir));
+					const bad = `${prefix}/$${reserved}${ext}`;
+					const good = `${prefix}/__${reserved}${ext}`;
 
-						throw new Error(`${bad} should be renamed ${good}`);
-					}
-				});
+					throw new Error(`${bad} should be renamed ${good}`);
+				}
+			});
 
-				if (name[0] === '_') {
-					if (name[1] === '_' && !specials.has(name)) {
-						throw new Error(`Files and directories prefixed with __ are reserved (saw ${file})`);
-					}
-
-					return null;
+			if (name[0] === '_') {
+				if (name[1] === '_' && !specials.has(name)) {
+					throw new Error(`Files and directories prefixed with __ are reserved (saw ${file})`);
 				}
 
-				if (basename[0] === '.' && basename !== '.well-known') return null;
-				if (!is_dir && !/^(\.[a-z0-9]+)+$/i.test(ext)) return null; // filter out tmp files etc
+				return;
+			}
 
-				const segment = is_dir ? basename : name;
+			if (basename[0] === '.' && basename !== '.well-known') return null;
+			if (!is_dir && !/^(\.[a-z0-9]+)+$/i.test(ext)) return null; // filter out tmp files etc
 
-				if (/\]\[/.test(segment)) {
-					throw new Error(`Invalid route ${file} — parameters must be separated`);
-				}
+			const segment = is_dir ? basename : name;
 
-				if (count_occurrences('[', segment) !== count_occurrences(']', segment)) {
-					throw new Error(`Invalid route ${file} — brackets are unbalanced`);
-				}
+			if (/\]\[/.test(segment)) {
+				throw new Error(`Invalid route ${file} — parameters must be separated`);
+			}
 
-				if (/.+\[\.\.\.[^\]]+\]/.test(segment) || /\[\.\.\.[^\]]+\].+/.test(segment)) {
-					throw new Error(`Invalid route ${file} — rest parameter must be a standalone segment`);
-				}
+			if (count_occurrences('[', segment) !== count_occurrences(']', segment)) {
+				throw new Error(`Invalid route ${file} — brackets are unbalanced`);
+			}
 
-				const parts = get_parts(segment, file);
-				const is_index = is_dir ? false : basename.startsWith('index.');
-				const is_page = config.extensions.indexOf(ext) !== -1;
-				const route_suffix = basename.slice(basename.indexOf('.'), -ext.length);
+			if (/.+\[\.\.\.[^\]]+\]/.test(segment) || /\[\.\.\.[^\]]+\].+/.test(segment)) {
+				throw new Error(`Invalid route ${file} — rest parameter must be a standalone segment`);
+			}
 
-				return {
-					basename,
-					ext,
-					parts,
-					file: posixify(file),
-					is_dir,
-					is_index,
-					is_page,
-					route_suffix
-				};
-			})
-			.filter(Boolean)
-			.sort(comparator);
+			const parts = get_parts(segment, file);
+			const is_index = is_dir ? false : basename.startsWith('index.');
+			const is_page = config.extensions.indexOf(ext) !== -1;
+			const route_suffix = basename.slice(basename.indexOf('.'), -ext.length);
+
+			items.push({
+				basename,
+				ext,
+				parts,
+				file: posixify(file),
+				is_dir,
+				is_index,
+				is_page,
+				route_suffix
+			});
+		});
+		items = items.sort(comparator);
 
 		items.forEach((item) => {
 			const segments = parent_segments.slice();
@@ -222,37 +222,37 @@ export default function create_manifest_data({ config, output, cwd = process.cwd
 			} else if (item.is_page) {
 				components.push(item.file);
 
-				const a = layout_stack.concat(item.file);
-				const b = error_stack;
+				const concatenated = layout_stack.concat(item.file);
+				const errors = error_stack.slice();
 
 				const pattern = get_pattern(segments, true);
 
-				let i = a.length;
+				let i = concatenated.length;
 				while (i--) {
-					if (!b[i] && !a[i]) {
-						b.splice(i, 1);
-						a.splice(i, 1);
+					if (!errors[i] && !concatenated[i]) {
+						errors.splice(i, 1);
+						concatenated.splice(i, 1);
 					}
 				}
 
-				i = b.length;
+				i = errors.length;
 				while (i--) {
-					if (b[i]) break;
+					if (errors[i]) break;
 				}
 
-				b.splice(i + 1);
+				errors.splice(i + 1);
 
 				const path = segments.every((segment) => segment.length === 1 && !segment[0].dynamic)
 					? `/${segments.map((segment) => segment[0].content).join('/')}`
-					: null;
+					: '';
 
 				routes.push({
 					type: 'page',
 					pattern,
 					params,
 					path,
-					a,
-					b
+					a: /** @type {string[]} */ (concatenated),
+					b: /** @type {string[]} */ (errors)
 				});
 			} else {
 				const pattern = get_pattern(segments, !item.route_suffix);
@@ -356,25 +356,26 @@ function comparator(a, b) {
  * @param {string} file
  */
 function get_parts(part, file) {
-	return part
-		.split(/\[(.+?\(.+?\)|.+?)\]/)
-		.map((str, i) => {
-			if (!str) return null;
-			const dynamic = i % 2 === 1;
+	/** @type {Part[]} */
+	const result = [];
+	part.split(/\[(.+?\(.+?\)|.+?)\]/).map((str, i) => {
+		if (!str) return;
+		const dynamic = i % 2 === 1;
 
-			const [, content] = dynamic ? /([^(]+)$/.exec(str) : [null, str];
+		const [, content] = dynamic ? /([^(]+)$/.exec(str) || [null, null] : [null, str];
 
-			if (dynamic && !/^(\.\.\.)?[a-zA-Z0-9_$]+$/.test(content)) {
-				throw new Error(`Invalid route ${file} — parameter name must match /^[a-zA-Z0-9_$]+$/`);
-			}
+		if (!content || (dynamic && !/^(\.\.\.)?[a-zA-Z0-9_$]+$/.test(content))) {
+			throw new Error(`Invalid route ${file} — parameter name must match /^[a-zA-Z0-9_$]+$/`);
+		}
 
-			return {
-				content,
-				dynamic,
-				spread: dynamic && /^\.{3}.+$/.test(content)
-			};
-		})
-		.filter(Boolean);
+		result.push({
+			content,
+			dynamic,
+			spread: dynamic && /^\.{3}.+$/.test(content)
+		});
+	});
+
+	return result;
 }
 
 /**
@@ -391,12 +392,21 @@ function get_pattern(segments, add_trailing_slash) {
 							.map((part) => {
 								return part.dynamic
 									? '([^/]+?)'
-									: part.content
+									: // allow users to specify characters on the file system in an encoded manner
+									  part.content
 											.normalize()
-											.replace(/\?/g, '%3F')
+											// We use [ and ] to denote parameters, so users must encode these on the file
+											// system to match against them. We don't decode all characters since others
+											// can already be epressed and so that '%' can be easily used directly in filenames
+											.replace(/%5[Bb]/g, '[')
+											.replace(/%5[Dd]/g, ']')
+											// '#', '/', and '?' can only appear in URL path segments in an encoded manner.
+											// They will not be touched by decodeURI so need to be encoded here, so
+											// that we can match against them.
+											// We skip '/' since you can't create a file with it on any OS
 											.replace(/#/g, '%23')
-											.replace(/%5B/g, '[')
-											.replace(/%5D/g, ']')
+											.replace(/\?/g, '%3F')
+											// escape characters that have special meaning in regex
 											.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 							})
 							.join('');

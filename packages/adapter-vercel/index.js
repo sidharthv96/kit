@@ -3,9 +3,13 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 
-export default function () {
-	/** @type {import('@sveltejs/kit').Adapter} */
-	const adapter = {
+/**
+ * @typedef {import('esbuild').BuildOptions} BuildOptions
+ */
+
+/** @type {import('.')} **/
+export default function (options) {
+	return {
 		name: '@sveltejs/adapter-vercel',
 
 		async adapt({ utils }) {
@@ -27,13 +31,19 @@ export default function () {
 			utils.log.minor('Generating serverless function...');
 			utils.copy(join(files, 'entry.js'), '.svelte-kit/vercel/entry.js');
 
-			await esbuild.build({
+			/** @type {BuildOptions} */
+			const default_options = {
 				entryPoints: ['.svelte-kit/vercel/entry.js'],
 				outfile: join(dirs.lambda, 'index.js'),
 				bundle: true,
 				inject: [join(files, 'shims.js')],
 				platform: 'node'
-			});
+			};
+
+			const build_options =
+				options && options.esbuild ? await options.esbuild(default_options) : default_options;
+
+			await esbuild.build(build_options);
 
 			writeFileSync(join(dirs.lambda, 'package.json'), JSON.stringify({ type: 'commonjs' }));
 
@@ -50,6 +60,4 @@ export default function () {
 			utils.copy(join(files, 'routes.json'), join(dir, 'config/routes.json'));
 		}
 	};
-
-	return adapter;
 }

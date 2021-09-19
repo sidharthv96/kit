@@ -3,16 +3,18 @@
 		"allowJs": true,
 		"checkJs": true,
 		"noEmit": true,
-		"noImplicitAny": true,
+		"strict": true,
 		"target": "es2020",
 		"module": "es2020",
 		"moduleResolution": "node",
 		"allowSyntheticDefaultImports": true,
 		"paths": {
+			"@sveltejs/kit": ["./types/index"],
+			// paths after this are for internal use only
+			"@sveltejs/kit/types/*": ["./types/*"],
 			"test": ["./test/types"],
-			"types/*": ["./types/*"],
-			"@sveltejs/kit": ["./types/index"]
+			"types/*": ["./types/*"]
 		}
 	},
-	"include": ["src/**/*", "test/**/*", "types/**/*", "test/types.d.ts", "test/ambient.d.ts"]
+	"include": ["src/**/*", "test/**/*", "types/**/*"]
 }

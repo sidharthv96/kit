@@ -5,8 +5,28 @@ export default function (test) {
 	test('visits a route with non-ASCII character', '/encoded', async ({ page, clicknav }) => {
 		await clicknav('[href="/encoded/苗条"]');
 		assert.equal(await page.innerHTML('h1'), 'static');
-		assert.equal(await page.innerHTML('h2'), '/encoded/苗条');
-		assert.equal(await page.innerHTML('h3'), '/encoded/苗条');
+		assert.equal(decodeURI(await page.innerHTML('h2')), '/encoded/苗条');
+		assert.equal(decodeURI(await page.innerHTML('h3')), '/encoded/苗条');
+	});
+
+	test('visits a route with a doubly encoded space', '/encoded/test%2520me', async ({ page }) => {
+		assert.equal(await page.innerHTML('h2'), '/encoded/test%2520me: test%20me');
+		assert.equal(await page.innerHTML('h3'), '/encoded/test%2520me: test%20me');
+	});
+
+	test('visits a route with an encoded slash', '/encoded/AC%2fDC', async ({ page }) => {
+		assert.equal(await page.innerHTML('h2'), '/encoded/AC%2fDC: AC/DC');
+		assert.equal(await page.innerHTML('h3'), '/encoded/AC%2fDC: AC/DC');
+	});
+
+	test('visits a route with an encoded bracket', '/encoded/%5b', async ({ page }) => {
+		assert.equal(await page.innerHTML('h2'), '/encoded/%5b: [');
+		assert.equal(await page.innerHTML('h3'), '/encoded/%5b: [');
+	});
+
+	test('visits a route with an encoded question mark', '/encoded/%3f', async ({ page }) => {
+		assert.equal(await page.innerHTML('h2'), '/encoded/%3f: ?');
+		assert.equal(await page.innerHTML('h3'), '/encoded/%3f: ?');
 	});
 
 	test(
@@ -15,8 +35,8 @@ export default function (test) {
 		async ({ page, clicknav }) => {
 			await clicknav('[href="/encoded/土豆"]');
 			assert.equal(await page.innerHTML('h1'), 'dynamic');
-			assert.equal(await page.innerHTML('h2'), '/encoded/土豆: 土豆');
-			assert.equal(await page.innerHTML('h3'), '/encoded/土豆: 土豆');
+			assert.equal(decodeURI(await page.innerHTML('h2')), '/encoded/土豆: 土豆');
+			assert.equal(decodeURI(await page.innerHTML('h3')), '/encoded/土豆: 土豆');
 		}
 	);
 
@@ -24,8 +44,8 @@ export default function (test) {
 		await clicknav('[href="/encoded/反应"]');
 
 		assert.equal(await page.innerHTML('h1'), 'static');
-		assert.equal(await page.innerHTML('h2'), '/encoded/苗条');
-		assert.equal(await page.innerHTML('h3'), '/encoded/苗条');
+		assert.equal(decodeURI(await page.innerHTML('h2')), '/encoded/苗条');
+		assert.equal(decodeURI(await page.innerHTML('h3')), '/encoded/苗条');
 	});
 
 	test('sets charset on JSON Content-Type', null, async ({ fetch }) => {

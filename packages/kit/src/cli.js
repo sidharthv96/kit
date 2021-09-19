@@ -4,6 +4,7 @@ import colors from 'kleur';
 import * as ports from 'port-authority';
 import { load_config } from './core/config/index.js';
 import { networkInterfaces, release } from 'os';
+import { coalesce_to_error, has_error_code } from './utils/error.js';
 
 async function get_config() {
 	// TODO this is temporary, for the benefit of early adopters
@@ -23,11 +24,12 @@ async function get_config() {
 
 	try {
 		return await load_config();
-	} catch (error) {
+	} catch (err) {
+		const error = coalesce_to_error(err);
 		let message = error.message;
 
 		if (
-			error.code === 'MODULE_NOT_FOUND' &&
+			has_error_code(error, 'MODULE_NOT_FOUND') &&
 			/Cannot find module svelte\.config\./.test(error.message)
 		) {
 			message = 'Missing svelte.config.js';
@@ -36,15 +38,20 @@ async function get_config() {
 		}
 
 		console.error(colors.bold().red(message));
-		console.error(colors.grey(error.stack));
+		if (error.stack) {
+			console.error(colors.grey(error.stack));
+		}
 		process.exit(1);
 	}
 }
 
-/** @param {Error} error */
+/** @param {unknown} error */
 function handle_error(error) {
-	console.log(colors.bold().red(`> ${error.message}`));
-	console.log(colors.gray(error.stack));
+	const err = coalesce_to_error(error);
+	console.log(colors.bold().red(`> ${err.message}`));
+	if (err.stack) {
+		console.log(colors.gray(err.stack));
+	}
 	process.exit(1);
 }
 
@@ -79,7 +86,7 @@ prog
 	.action(async ({ port, host, https, open }) => {
 		await check_port(port);
 
-		process.env.NODE_ENV = 'development';
+		process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 		const config = await get_config();
 
 		const { dev } = await import('./core/dev/index.js');
@@ -106,7 +113,7 @@ prog
 	.describe('Create a production build of your app')
 	.option('--verbose', 'Log more stuff', false)
 	.action(async ({ verbose }) => {
-		process.env.NODE_ENV = 'production';
+		process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 		const config = await get_config();
 
 		try {
@@ -146,36 +153,18 @@ prog
 	.action(async ({ port, host, https, open }) => {
 		await check_port(port);
 
-		process.env.NODE_ENV = 'production';
+		process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 		const config = await get_config();
 
-		const { start } = await import('./core/start/index.js');
+		const { preview } = await import('./core/preview/index.js');
 
 		try {
-			await start({ port, host, config, https });
+			await preview({ port, host, config, https });
 
 			welcome({ port, host, https, open });
 		} catch (error) {
 			handle_error(error);
 		}
-	});
-
-// TODO remove this after a few versions
-prog
-	.command('start')
-	.describe('Deprecated — use svelte-kit preview instead')
-	.option('-p, --port', 'Port', 3000)
-	.option('-h, --host', 'Host (only use this on trusted networks)', 'localhost')
-	.option('-H, --https', 'Use self-signed HTTPS certificate', false)
-	.option('-o, --open', 'Open a browser tab', false)
-	.action(async () => {
-		console.log(
-			colors
-				.bold()
-				.red(
-					'"svelte-kit preview" will now preview your production build locally. Note: it is not intended for production use'
-				)
-		);
 	});
 
 prog
@@ -185,7 +174,7 @@ prog
 	.action(async () => {
 		const config = await get_config();
 
-		const { make_package } = await import('./core/make_package/index.js');
+		const { make_package } = await import('./packaging/index.js');
 
 		try {
 			await make_package(config);
@@ -198,18 +187,23 @@ prog.parse(process.argv, { unknown: (arg) => `Unknown option: ${arg}` });
 
 /** @param {number} port */
 async function check_port(port) {
+	if (await ports.check(port)) {
+		return;
+	}
+	console.log(colors.bold().red(`Port ${port} is occupied`));
 	const n = await ports.blame(port);
-
 	if (n) {
-		console.log(colors.bold().red(`Port ${port} is occupied`));
-
 		// prettier-ignore
 		console.log(
 			`Terminate process ${colors.bold(n)} or specify a different port with ${colors.bold('--port')}\n`
 		);
-
-		process.exit(1);
+	} else {
+		// prettier-ignore
+		console.log(
+			`Terminate the process occupying the port or specify a different port with ${colors.bold('--port')}\n`
+		);
 	}
+	process.exit(1);
 }
 
 /**
@@ -229,6 +223,7 @@ function welcome({ port, host, https, open }) {
 	const exposed = host !== 'localhost' && host !== '127.0.0.1';
 
 	Object.values(networkInterfaces()).forEach((interfaces) => {
+		if (!interfaces) return;
 		interfaces.forEach((details) => {
 			if (details.family !== 'IPv4') return;
 

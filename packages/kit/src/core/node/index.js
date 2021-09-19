@@ -1,7 +1,4 @@
-/**
- * @param {import('http').IncomingMessage} req
- * @returns {Promise<import('types/hooks').StrictBody>}
- */
+/** @type {import('@sveltejs/kit/node').GetRawBody} */
 export function getRawBody(req) {
 	return new Promise((fulfil, reject) => {
 		const h = req.headers;
@@ -46,14 +43,7 @@ export function getRawBody(req) {
 		}
 
 		req.on('end', () => {
-			const [type] = h['content-type'].split(/;\s*/);
-
-			if (type === 'application/octet-stream') {
-				return fulfil(data);
-			}
-
-			const encoding = h['content-encoding'] || 'utf-8';
-			fulfil(new TextDecoder(encoding).decode(data));
+			fulfil(data);
 		});
 	});
 }

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import colors from 'kleur';
-import { copy } from './filesystem/index.js';
+import { copy } from '../utils/filesystem.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,7 +44,7 @@ export function logger({ verbose }) {
 /**
  * Given an entry point like [cwd]/src/hooks, returns a filename like [cwd]/src/hooks.js or [cwd]/src/hooks/index.js
  * @param {string} entry
- * @returns {string}
+ * @returns {string|null}
  */
 export function resolve_entry(entry) {
 	if (fs.existsSync(entry)) {
@@ -73,36 +73,4 @@ export function resolve_entry(entry) {
 /** @param {string} str */
 export function posixify(str) {
 	return str.replace(/\\/g, '/');
-}
-
-/**
- * Get a list of packages that use pkg.svelte, so they can be added
- * to ssr.noExternal. This is done on a best-effort basis to reduce
- * the frequency of 'Must use import to load ES Module' and similar
- * @param {string} cwd
- * @returns {string[]}
- */
-function find_svelte_packages(cwd) {
-	const pkg_file = path.join(cwd, 'package.json');
-	if (!fs.existsSync(pkg_file)) return [];
-
-	const pkg = JSON.parse(fs.readFileSync(pkg_file, 'utf8'));
-
-	const deps = [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})];
-
-	return deps.filter((dep) => {
-		const dep_pkg_file = path.join(cwd, 'node_modules', dep, 'package.json');
-		if (!fs.existsSync(dep_pkg_file)) return false;
-
-		const dep_pkg = JSON.parse(fs.readFileSync(dep_pkg_file, 'utf-8'));
-		return !!dep_pkg.svelte;
-	});
-}
-
-/**
- * @param {string} cwd
- * @param {string[]} [user_specified_deps]
- */
-export function get_no_external(cwd, user_specified_deps = []) {
-	return [...user_specified_deps, ...find_svelte_packages(cwd)];
 }

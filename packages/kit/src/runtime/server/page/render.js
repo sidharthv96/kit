@@ -1,5 +1,6 @@
 import devalue from 'devalue';
 import { writable } from 'svelte/store';
+import { coalesce_to_error } from '../../../utils/error.js';
 import { hash } from '../../hash.js';
 
 const s = JSON.stringify;
@@ -8,22 +9,22 @@ const s = JSON.stringify;
 
 /**
  * @param {{
+ *   branch: Array<import('./types').Loaded>;
  *   options: import('types/internal').SSRRenderOptions;
  *   $session: any;
  *   page_config: { hydrate: boolean, router: boolean, ssr: boolean };
  *   status: number;
- *   error: Error,
- *   branch: import('./types').Loaded[];
- *   page: import('types/page').Page
+ *   error?: Error,
+ *   page?: import('types/page').Page
  * }} opts
  */
 export async function render_response({
+	branch,
 	options,
 	$session,
 	page_config,
 	status,
 	error,
-	branch,
 	page
 }) {
 	const css = new Set(options.entry.css);
@@ -42,7 +43,7 @@ export async function render_response({
 		error.stack = options.get_stack(error);
 	}
 
-	if (branch) {
+	if (page_config.ssr) {
 		branch.forEach(({ node, loaded, fetched, uses_credentials }) => {
 			if (node.css) node.css.forEach((url) => css.add(url));
 			if (node.js) node.js.forEach((url) => js.add(url));
@@ -125,19 +126,19 @@ export async function render_response({
 				route: ${!!page_config.router},
 				spa: ${!page_config.ssr},
 				trailing_slash: ${s(options.trailing_slash)},
-				hydrate: ${page_config.ssr && page_config.hydrate? `{
+				hydrate: ${page_config.ssr && page_config.hydrate ? `{
 					status: ${status},
 					error: ${serialize_error(error)},
 					nodes: [
-						${branch
+						${(branch || [])
 						.map(({ node }) => `import(${s(node.entry)})`)
 						.join(',\n\t\t\t\t\t\t')}
 					],
 					page: {
-						host: ${page.host ? s(page.host) : 'location.host'}, // TODO this is redundant
-						path: ${s(page.path)},
-						query: new URLSearchParams(${s(page.query.toString())}),
-						params: ${s(page.params)}
+						host: ${page && page.host ? s(page.host) : 'location.host'}, // TODO this is redundant
+						path: ${s(page && page.path)},
+						query: new URLSearchParams(${page ? s(page.query.toString()) : ''}),
+						params: ${page && s(page.params)}
 					}
 				}` : 'null'}
 			});
@@ -172,10 +173,10 @@ export async function render_response({
 
 					return `<script ${attributes}>${json}</script>`;
 				})
-				.join('\n\n\t\t\t')}
-		`.replace(/^\t{2}/gm, '');
+				.join('\n\n\t')}
+		`;
 
-	/** @type {import('types/helper').Headers} */
+	/** @type {import('types/helper').ResponseHeaders} */
 	const headers = {
 		'content-type': 'text/html'
 	};
@@ -203,14 +204,14 @@ function try_serialize(data, fail) {
 	try {
 		return devalue(data);
 	} catch (err) {
-		if (fail) fail(err);
+		if (fail) fail(coalesce_to_error(err));
 		return null;
 	}
 }
 
 // Ensure we return something truthy so the client will not re-render the page over the error
 
-/** @param {Error & {frame?: string} & {loc?: object}} error */
+/** @param {(Error & {frame?: string} & {loc?: object}) | undefined | null} error */
 function serialize_error(error) {
 	if (!error) return null;
 	let serialized = try_serialize(error);

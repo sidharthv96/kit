@@ -1,25 +1,18 @@
 import { ServerRequest } from './hooks';
-import { Headers, MaybePromise } from './helper';
+import { JSONString, MaybePromise, ResponseHeaders } from './helper';
 
-type JSONValue =
-	| string
-	| number
-	| boolean
-	| null
-	| Date
-	| JSONValue[]
-	| { [key: string]: JSONValue };
+type DefaultBody = JSONString | Uint8Array;
 
-type DefaultBody = JSONValue | Uint8Array;
-
-export type EndpointOutput<Body extends DefaultBody = DefaultBody> = {
+export interface EndpointOutput<Body extends DefaultBody = DefaultBody> {
 	status?: number;
-	headers?: Partial<Headers>;
+	headers?: ResponseHeaders;
 	body?: Body;
-};
+}
 
-export type RequestHandler<
+export interface RequestHandler<
 	Locals = Record<string, any>,
 	Input = unknown,
 	Output extends DefaultBody = DefaultBody
-> = (request: ServerRequest<Locals, Input>) => MaybePromise<void | EndpointOutput<Output>>;
+> {
+	(request: ServerRequest<Locals, Input>): MaybePromise<void | EndpointOutput<Output>>;
+}

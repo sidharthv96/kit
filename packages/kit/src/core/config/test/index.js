@@ -15,10 +15,10 @@ async function testLoadDefaultConfig(path) {
 
 	const config = await load_config({ cwd });
 
-	delete config.kit.vite; // can't test equality of a function
+	// @ts-expect-error - can't test equality of a function
+	delete config.kit.vite;
 
 	assert.equal(config, {
-		compilerOptions: null,
 		extensions: ['.svelte'],
 		kit: {
 			adapter: null,
@@ -30,7 +30,6 @@ async function testLoadDefaultConfig(path) {
 				lib: join(cwd, 'src/lib'),
 				routes: join(cwd, 'src/routes'),
 				serviceWorker: join(cwd, 'src/service-worker'),
-				setup: join(cwd, 'src/setup'),
 				template: join(cwd, 'src/app.html')
 			},
 			floc: false,
@@ -39,27 +38,33 @@ async function testLoadDefaultConfig(path) {
 			hydrate: true,
 			package: {
 				dir: 'package',
+				emitTypes: true,
 				exports: {
 					include: ['**'],
-					exclude: ['_*', '**/_*']
+					exclude: ['**/_*']
 				},
 				files: {
 					include: ['**'],
 					exclude: []
-				},
-				emitTypes: true
+				}
 			},
 			serviceWorker: {
 				exclude: []
 			},
-			paths: { base: '', assets: '/.' },
-			prerender: { crawl: true, enabled: true, force: false, pages: ['*'] },
+			paths: { base: '', assets: '' },
+			prerender: {
+				crawl: true,
+				enabled: true,
+				entries: ['*'],
+				force: undefined,
+				onError: 'fail',
+				pages: undefined
+			},
 			router: true,
 			ssr: true,
 			target: null,
 			trailingSlash: 'never'
-		},
-		preprocess: null
+		}
 	});
 }
 
@@ -69,6 +74,21 @@ test('load default config (cjs)', async () => {
 
 test('load default config (esm)', async () => {
 	await testLoadDefaultConfig('default-esm');
+});
+
+test('errors on loading config with incorrect default export', async () => {
+	let errorMessage = null;
+	try {
+		const cwd = join(__dirname, 'fixtures', 'export-string');
+		await load_config({ cwd });
+	} catch (/** @type {any} */ e) {
+		errorMessage = e.message;
+	}
+
+	assert.equal(
+		errorMessage,
+		'Unexpected config type "string", make sure your default export is an object.'
+	);
 });
 
 test.run();
